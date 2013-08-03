@@ -1,0 +1,233 @@
+
+module Micro_Pros(
+    input CLK,
+    output [15:0] CPU_OUT,
+	 output [15:0] ir_out,
+	 output [15:0] reg_out
+    );
+	 
+	
+
+	reg [15:0] MEM [0:63];
+	reg [15:0] REG [0:15];
+	reg [15:0] AR; //Address register
+	reg [15:0] PC; //Pointer counter
+	reg [15:0] DR; //Data Register	
+	reg [5:0]  FLAG; // Ffag register. [x:x:x:z:n:c:]
+
+	reg [15:0] IR;
+
+// Transfer Operations
+	//IN src_reg
+	`define IN 5'd0
+	//OUT dest_reg
+	`define OUT 5'd1
+	//LOAD mem_adr
+	`define LOAD 5'd2
+	//STOR mem_adr
+	`define STOR 5'd3
+	//MOVE dest_reg, src_reg
+	`define MOVE 5'd4
+	
+	
+	/****************
+	* addressing	
+		* Direct = 010
+		* Immediate = 011
+		* Implicit = 000
+		* Register = ???
+	*****************/
+	`define OPCODE IR[15:11]
+	
+	//variables
+	reg [6:0] i; 
+	// initialize memory data
+	initial begin
+		for (i = 0; i < 64; i=i+1) begin
+			MEM[i]<=16'd0;
+		end
+		for (i = 0; i < 16; i=i+1) begin
+			REG[i]<=16'd0;
+		end
+		AR <= 0;
+		PC <= 0;
+		DR <= 0;
+		IR <= 0;
+		//MEM[0]<= 16'bPPPPP AAA YYYY ZZZZ
+		MEM[0] <= 16'b0001011000000000; // Load mem[1] to reg[0] immediate addressing
+		MEM[1] <= 16'd5;
+
+		MEM[2] <= 16'b0001001000010000; // Load mem[3] to reg[1] direct addressing
+		MEM[3] <= 16'd4;
+		MEM[4] <= 16'd6;
+	end
+	
+	
+	always@ (posedge CLK) begin
+	/********************
+	* Fetch Cycle
+	**********************/
+	AR <= PC;
+	DR <= MEM[AR];
+	PC <= PC + 1;
+	IR <= DR;
+	
+	/*********************
+	* Execute Cycle
+	*********************/
+	if (IR[9:8] == 10) begin
+		case (`OPCODE)
+			`LOAD: begin
+				AR <= PC;
+				DR <= MEM[AR];
+				PC <= PC + 1;
+				AR <= DR;
+				DR <= MEM[AR];
+				PC <= PC + 1;  // I'm not sure this is right, seems like one too many
+				REG[IR[7:4]] <= DR;
+			//default: ;
+			end
+		endcase
+	end
+	
+	if (IR[9:8] == 11) begin
+		case (`OPCODE)
+			`LOAD: begin
+				AR <= PC;      // store PC to AR
+				DR <= MEM[AR]; // put OPCODE, addressing type, source & dest registers to DR
+				PC <= PC + 1;  // increment PC
+				REG[IR[7:4]] <= DR; // set specified REG
+			//default: ; //NOP
+			end
+		endcase
+	end
+	
+	if (IR[9:8] == 10) begin
+		case (`OPCODE)
+			`LOAD: begin
+				AR <= PC;
+				DR <= MEM[AR];
+				PC <= PC + 1;
+				AR <= DR;
+				DR <= MEM[AR];
+				PC <= PC + 1;  // I'm not sure this is right, seems like one too many
+				REG[IR[7:4]] <= DR;
+			//default: ;
+			end
+			`STOR: begin
+				AR <= PC;      // store PC to AR
+				DR <= MEM[AR]; // put OPCODE, addressing type, source & dest registers to DR
+				PC <= PC + 1;  // increment PC
+				DR <= REG[IR[7:4]]; // Stores IR value into DR.
+			end
+			`JMP: begin	 //Move Program Counter to new location.
+			   PC <= REG[IR[7:4]];
+			end;
+			`JNZ: begin	//Jumps if Z | N Flag == 1.   Should it be AND or OR?
+			   if ((FLAG[2] == 1) | (FLAG[1] == 1)) begin
+			   PC <= REG[IR[7:4]];
+				FLAG[1] = 0;
+            FLAG[2] = 0;			
+				end
+			end;
+			`JZ: begin	//Jumps if Z Flag == 1.
+			   if (FLAG[2] == 1) begin
+			   PC <= REG[IR[7:4]];
+            FLAG[2] = 0;			
+				end
+			end;
+		default: ; //NOP
+		endcase
+	end
+
+
+
+if (IR[9] == 0) begin //IR = instruction Register
+		case (`OPCODE)
+		`ADD: begin	// Dest = Dest + Source;
+			   
+			   REG[IR[7:4]] <=  REG[IR[7:4]] +  REG[IR[3:0]];//Not sure if Reg's are correct.
+            if ((REG[IR[7:4]] +  REG[IR[3:0]]) == 0) begin //Checks if newvalue is zero.
+				    FLAG[2] = 1;
+					 end
+				else if (REG[IR[7:4]] +  REG[IR[3:0]]) < 0) begin //Checks if new value is Neg.
+				    FLAG[1] = 1;
+				end
+				default : ;
+				end
+			end;
+		`SUB: begin	// Dest = Dest - Source;
+			   
+			   REG[IR[7:4]] <=  REG[IR[7:4]] -  REG[IR[3:0]];//Not sure if Reg's are correct.
+            	if ((REG[IR[7:4]] -  REG[IR[3:0]]) == 0) begin //Checks if newvalue is zero.
+				    FLAG[2] = 1;
+					 end
+				else if (REG[IR[7:4]] -  REG[IR[3:0]]) < 0) begin //Checks if new value is Neg.
+				    FLAG[1] = 1;
+				end
+				default : ;		
+				end
+			end;
+		`INC: begin	// Dest = Dest + 1;
+			   
+			   REG[IR[7:4]] <=  REG[IR[7:4]] + 1 ;///Not sure if Reg's are correct.
+            			
+				end
+			end;
+		`DEC: begin	// Dest = Dest - 1;
+			   
+			   REG[IR[7:4]] <=  REG[IR[7:4]] - 1 ;//Not sure if Reg's are correct.
+            			if ((REG[IR[7:4]] - 1]) == 0) begin //Checks if newvalue is zero.
+				         FLAG[2] = 1;
+					      end
+			         	else if (REG[IR[7:4]] - 1) < 0) begin //Checks if new value is Neg.
+				         FLAG[1] = 1;
+				         end
+				default : ;
+				end
+			end;
+		`CMP: begin	// Dest = Dest - 1;
+			   if ((REG[IR[7:4]] -  REG[IR[3:0]]) == 0)
+			      FLAG[2] = 1;    			
+				end
+			end;
+	   `AND: begin	// Dest = Dest & Source;
+			   REG[IR[7:4]] <=  REG[IR[7:4]] &  REG[IR[3:0]];//
+				end
+			end;
+		`OR: begin	// Dest = Dest | Source;
+			   REG[IR[7:4]] <=  REG[IR[7:4]] | REG[IR[3:0]];//.
+				end
+			end;
+		`NOT: begin	// Dest = Dest ! Source;
+			   REG[IR[7:4]] <=  REG[IR[7:4]] ! REG[IR[3:0]];//
+				end
+			end;
+		`SHIFTRR: begin	// Shifts the bits to the Right.
+			   REG[IR[7:4]] <=  (REG[IR[3:0]] >> 1 );//
+				end
+			end
+		`SHIFTLL: begin	// Shifts the bits to the Left.
+			   REG[IR[7:4]] <=  (REG[IR[3:0]] << 1 );//
+				end
+			end
+		
+	end
+	
+	
+
+	
+if (IR[15:11] == ???)	
+	PC <= REG[IR[7:4]];
+
+	//IR [15..11] == 10100: PC ? R[dest_reg];  // JMP
+
+
+	
+end//end always block
+	
+	/*** Test things ***/
+assign ir_out = IR;
+assign reg_out = REG[IR[7:4]];
+
+endmodule
